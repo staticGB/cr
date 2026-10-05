@@ -59,8 +59,9 @@ $('th').onclick=()=>{const d=document.documentElement,dk=d.dataset.theme==='dark
 ed.addEventListener('input',()=>{lastEdit=Date.now();clearTimeout(runT);runT=setTimeout(run,300);edited=true;sv.textContent=live?'syncing…':'local';clearTimeout(pushT);pushT=setTimeout(pushCode,600)});
 ed.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();ed.setRangeText('  ',ed.selectionStart,ed.selectionEnd,'end');ed.dispatchEvent(new Event('input'))}
  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();run()}});
-// Excalidraw's collab server relays opaque encrypted payloads. Change this to your own excalidraw-room server if you host one.
-const WS_SERVER='https://oss-collab.excalidraw.com';
+// Was https://oss-collab.excalidraw.com - that server rejects any origin but excalidraw.com (403).
+// Pointed at a self-hosted excalidraw-room relay instead, which accepts any origin.
+const WS_SERVER='https://aims-florists-instructional-representations.trycloudflare.com';
 const b64u=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const mkKey=k=>crypto.subtle.importKey('jwk',{alg:'A128GCM',ext:true,k,key_ops:['encrypt','decrypt'],kty:'oct'},{name:'AES-GCM',length:128},false,['encrypt','decrypt']);
 async function tx(obj){if(!live)return;try{const iv=crypto.getRandomValues(new Uint8Array(12)),enc=await crypto.subtle.encrypt({name:'AES-GCM',iv},cryptoKey,new TextEncoder().encode(JSON.stringify(obj)));sock.emit('server-broadcast',roomId,enc,iv)}catch(e){}}
