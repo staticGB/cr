@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CodeRoom</title>
+<style>
+:root{--bg:#f6f6f9;--panel:#fff;--fg:#1e1e24;--mut:#6b6b78;--bd:#dcdce4;--ac:#6965db;--acbg:#e6e5ff;--me:#ece9ff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121216;--panel:#1c1c22;--fg:#eee;--mut:#9a9aa8;--bd:#34343e;--ac:#a8a5ff;--acbg:#34336b;--me:#2b2a55}}
+:root[data-theme="dark"]{--bg:#121216;--panel:#1c1c22;--fg:#eee;--mut:#9a9aa8;--bd:#34343e;--ac:#a8a5ff;--acbg:#34336b;--me:#2b2a55}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--bd);background:var(--panel)}
+header h1{font-size:16px;margin:0;flex:1}
+.chip{font-size:12px;padding:3px 9px;border-radius:99px;background:var(--acbg)}
+button{font:inherit;color:var(--fg);background:var(--acbg);border:0;border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{outline:1px solid var(--ac)}
+.main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr 300px;gap:8px;padding:8px}
+.pane{background:var(--panel);border:1px solid var(--bd);border-radius:12px;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.ph{padding:7px 12px;font-size:12px;font-weight:600;color:var(--mut);border-bottom:1px solid var(--bd);text-transform:uppercase;letter-spacing:.04em}
+#ed{flex:1;border:0;outline:0;resize:none;padding:12px;background:transparent;color:var(--fg);font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:2;white-space:pre;overflow:auto}
+#pv{flex:1;border:0;background:#fff;width:100%}
+#log{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+.m{max-width:92%;padding:6px 10px;border-radius:10px;background:var(--bg);font-size:14px;overflow-wrap:anywhere}
+.m.me{align-self:flex-end;background:var(--me)}.m b{display:block;font-size:11px;color:var(--mut);margin-bottom:1px}
+.empty{color:var(--mut);font-size:13px;text-align:center;margin-top:20px}
+#cf{display:flex;gap:6px;padding:8px;border-top:1px solid var(--bd)}
+#ci{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;outline:0}
+#ci:focus{border-color:var(--ac)}
+.tabs{display:none;padding:6px 8px 0;gap:6px}.tabs button.on{background:var(--ac);color:#fff}
+@media (max-width:899px){.tabs{display:flex}.main{grid-template-columns:1fr}.pane{display:none}body[data-tab="ed"] #p-ed,body[data-tab="pv"] #p-pv,body[data-tab="chat"] #p-chat{display:flex}}
+</style></head>
+<body data-tab="ed">
+<header><h1>⌨️ CodeRoom</h1><span class="chip" id="peers">Local only</span><input id="nm" maxlength="20" aria-label="Your name" style="width:110px;padding:5px 8px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit"><button id="rb">Start live room</button><button id="th" title="Toggle theme">☀︎/☾</button></header>
+<div class="tabs"><button data-t="ed" class="on">Code</button><button data-t="pv">Preview</button><button data-t="chat">Chat</button></div>
+<div class="main">
+ <section class="pane" id="p-ed"><div class="ph">HTML · <span id="sv">ready</span></div><textarea id="ed" spellcheck="false" aria-label="HTML editor"></textarea></section>
+ <section class="pane" id="p-pv"><div class="ph">Live preview</div><iframe id="pv" sandbox="allow-scripts allow-modals allow-forms" title="Preview"></iframe></section>
+ <section class="pane" id="p-chat"><div class="ph">Chat</div><div id="log"><div class="empty">No messages yet. Say hi 👋</div></div>
+  <div id="cf"><input id="ci" placeholder="Message…" maxlength="500" autocomplete="off"><button id="cs">Send</button></div></section>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const $=id=>document.getElementById(id),ed=$('ed'),pv=$('pv'),log=$('log'),ci=$('ci'),sv=$('sv'),pc=$('peers');
+const DEFAULT=`<!doctype html>
+<html>
+<body style="font-family:system-ui;text-align:center;padding:40px">
+  <h1>Hello, CodeRoom 👋</h1>
+  <button id="b" style="font-size:18px;padding:10px 18px">Clicked 0 times</button>
+  <script>
+    let n=0;
+    b.onclick=()=>b.textContent='Clicked '+(++n)+' times';
+  <\/script>
+</body>
+</html>`;
+let sock=null,live=false,roomId='',cryptoKey=null,lastEdit=0,pushT,runT,msgs=[],edited=false,myId=Math.random().toString(36).slice(2,8),myName='';
+function run(){pv.srcdoc=ed.value}
+function setTab(t){document.body.dataset.tab=t;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));if(t==='pv')run()}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+$('th').onclick=()=>{const d=document.documentElement,dk=d.dataset.theme==='dark'||(d.dataset.theme!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches);d.dataset.theme=dk?'light':'dark'};
+ed.addEventListener('input',()=>{lastEdit=Date.now();clearTimeout(runT);runT=setTimeout(run,300);edited=true;sv.textContent=live?'syncing…':'local';clearTimeout(pushT);pushT=setTimeout(pushCode,600)});
+ed.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();ed.setRangeText('  ',ed.selectionStart,ed.selectionEnd,'end');ed.dispatchEvent(new Event('input'))}
+ if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();run()}});
+// Excalidraw's collab server relays opaque encrypted payloads. Change this to your own excalidraw-room server if you host one.
+const WS_SERVER='https://oss-collab.excalidraw.com';
+const b64u=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const mkKey=k=>crypto.subtle.importKey('jwk',{alg:'A128GCM',ext:true,k,key_ops:['encrypt','decrypt'],kty:'oct'},{name:'AES-GCM',length:128},false,['encrypt','decrypt']);
+async function tx(obj){if(!live)return;try{const iv=crypto.getRandomValues(new Uint8Array(12)),enc=await crypto.subtle.encrypt({name:'AES-GCM',iv},cryptoKey,new TextEncoder().encode(JSON.stringify(obj)));sock.emit('server-broadcast',roomId,enc,iv)}catch(e){}}
+function pushCode(){if(live)tx({t:'code',from:myId,html:ed.value}).then(()=>sv.textContent='synced ✓')}
+function renderLog(){log.textContent='';if(!msgs.length){log.innerHTML='<div class="empty">No messages yet. Say hi 👋</div>';return}
+ for(const m of msgs){const d=document.createElement('div'),h=document.createElement('b'),t=document.createElement('span');d.className='m'+(m.uid===myId?' me':'');
+  h.textContent=m.uid===myId?'You':(m.name||'Guest');t.textContent=m.text;d.append(h,t);log.append(d)}log.scrollTop=log.scrollHeight}
+function send(){const text=ci.value.trim();if(!text)return;ci.value='';msgs.push({uid:myId,name:myName,text});renderLog();tx({t:'chat',from:myId,name:myName,text})}
+$('cs').onclick=send;ci.addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+function handle(m){if(!m||m.from===myId)return;
+ if(m.t==='chat'&&typeof m.text==='string'){msgs.push({uid:m.from,name:String(m.name||'Guest').slice(0,20),text:m.text.slice(0,500)});renderLog()}
+ else if(m.t==='code'&&typeof m.html==='string'&&m.html!==ed.value){if(document.activeElement===ed&&Date.now()-lastEdit<3000)return;const p=ed.selectionStart;ed.value=m.html;ed.setSelectionRange(p,p);run();sv.textContent='updated by a teammate'}}
+async function join(id,k){roomId=id;cryptoKey=await mkKey(k);pc.textContent='Connecting…';
+ sock=io(WS_SERVER,{transports:['websocket','polling']});
+ sock.on('connect_error',()=>{live=false;pc.textContent='Server unreachable'});
+ sock.on('init-room',()=>{sock.emit('join-room',roomId);live=true;pc.textContent='Live · 1 online';sv.textContent='live';$('rb').textContent='Copy invite link';if(edited)pushCode()});
+ sock.on('room-user-change',ids=>{pc.textContent='Live · '+ids.length+' online'});
+ sock.on('new-user',()=>{if(edited)pushCode()});
+ sock.on('client-broadcast',async(enc,iv)=>{try{const d=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(iv)},cryptoKey,enc);handle(JSON.parse(new TextDecoder().decode(d)))}catch(e){}})}
+$('rb').onclick=async()=>{if(!live&&!sock){const id=[...crypto.getRandomValues(new Uint8Array(10))].map(x=>x.toString(16).padStart(2,'0')).join(''),k=b64u(crypto.getRandomValues(new Uint8Array(16)));location.hash='room='+id+','+k;join(id,k);return}
+ try{await navigator.clipboard.writeText(location.href);$('rb').textContent='Copied!'}catch(e){prompt('Copy this link:',location.href)}setTimeout(()=>{$('rb').textContent='Copy invite link'},1500)};
+const nm=$('nm');try{myName=localStorage.getItem('cr-name')||''}catch(e){}myName=myName||'Guest-'+Math.random().toString(36).slice(2,5);nm.value=myName;
+nm.addEventListener('input',()=>{myName=nm.value.trim()||'Guest';try{localStorage.setItem('cr-name',myName)}catch(e){}});
+ed.value=DEFAULT;run();
+const hm=location.hash.match(/^#room=([\w-]+),([\w-]+)$/);if(hm)join(hm[1],hm[2]);
+</script></body></html>
